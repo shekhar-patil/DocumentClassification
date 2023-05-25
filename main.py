@@ -6,10 +6,9 @@ import pandas as pd
 import os
 from datasets import Dataset
 from datasets import Features, Sequence, ClassLabel, Value, Array2D, Array3D
-from transformers import AdamW
 from tqdm.notebook import tqdm
 
-image = Image.open("./content/RVL_CDIP_one_example_per_class/resume/0000157402.tif")
+image = Image.open("./content/RVL_CDIP_one_example_per_class/passport/passport1.jpg")
 image = image.convert("RGB")
 
 
@@ -41,8 +40,6 @@ dataset_path = "./content/RVL_CDIP_one_example_per_class"
 labels = [label for label in os.listdir(dataset_path)]
 id2label = {v: k for v, k in enumerate(labels)}
 label2id = {k: v for v, k in enumerate(labels)}
-print(label2id)
-
 
 images = []
 labels = []
@@ -59,7 +56,7 @@ for label_folder, _, file_names in os.walk(dataset_path):
       labels.extend([label] * len (relative_image_names))
 
 data = pd.DataFrame.from_dict({'image_path': images, 'label': labels})
-print(data.head())
+data.head()
 
 
 
@@ -70,12 +67,12 @@ print(dataset)
 
 # we need to define custom features
 features = Features({
-    'image': Array3D(dtype="int64", shape=(3, 224, 224)),
-    'input_ids': Sequence(feature=Value(dtype='int64')),
-    'attention_mask': Sequence(Value(dtype='int64')),
-    'token_type_ids': Sequence(Value(dtype='int64')),
-    'bbox': Array2D(dtype="int64", shape=(512, 4)),
-    'labels': ClassLabel(num_classes=len(np.unique(labels).tolist()), names=np.unique(labels).tolist()),
+  'image': Array3D(dtype="int64", shape=(3, 224, 224)),
+  'input_ids': Sequence(feature=Value(dtype='int64')),
+  'attention_mask': Sequence(Value(dtype='int64')),
+  'token_type_ids': Sequence(Value(dtype='int64')),
+  'bbox': Array2D(dtype="int64", shape=(512, 4)),
+  'labels': ClassLabel(num_classes=len(np.unique(labels).tolist()), names=np.unique(labels).tolist()),
 })
 
 def preprocess_data(examples):
@@ -90,7 +87,7 @@ def preprocess_data(examples):
   return encoded_inputs
 
 encoded_dataset = dataset.map(preprocess_data, remove_columns=dataset.column_names, features=features, batched=True, batch_size=2)
-
+# encoded_dataset.set_format(type="torch")
 
 import torch
 
@@ -103,7 +100,6 @@ batch = next(iter(dataloader))
 processor.tokenizer.decode(batch['input_ids'][0].tolist())
 print(id2label[batch['labels'][0].item()])
 
-
 from transformers import LayoutLMv2ForSequenceClassification
 import torch
 
@@ -113,7 +109,7 @@ model = LayoutLMv2ForSequenceClassification.from_pretrained("microsoft/layoutlmv
 model.to(device)
 
 
-optimizer = AdamW(model.parameters(), lr=5e-5)
+optimizer = torch.optim.AdamW(model.parameters(), lr=5e-5)
 
 global_step = 0
 num_train_epochs = 10
@@ -121,38 +117,34 @@ t_total = len(dataloader) * num_train_epochs # total number of training steps
 
 #put the model in training mode
 model.train()
-# for epoch in range(num_train_epochs):
-#   print("Epoch:", epoch)
-#   running_loss = 0.0
-#   correct = 0
-#   for batch in tqdm(dataloader):
-#     # forward pass
-#     outputs = model(**batch)
-#     loss = outputs.loss
+for epoch in range(num_train_epochs):
+  print("Epoch:", epoch)
+  running_loss = 0.0
+  correct = 0
+  for batch in tqdm(dataloader):
+    # forward pass
+    outputs = model(**batch)
+    loss = outputs.loss
 
-#     running_loss += loss.item()
-#     predictions = outputs.logits.argmax(-1)
-#     correct += (predictions == batch['labels']).float().sum()
+    running_loss += loss.item()
+    predictions = outputs.logits.argmax(-1)
+    correct += (predictions == batch['labels']).float().sum()
 
-#     # backward pass to get the gradients
-#     loss.backward()
+    # backward pass to get the gradients
+    loss.backward()
 
-#     # update
-#     optimizer.step()
-#     optimizer.zero_grad()
-#     global_step += 1
+    # update
+    optimizer.step()
+    optimizer.zero_grad()
+    global_step += 1
 
-#   print("Loss:", running_loss / batch["input_ids"].shape[0])
-#   accuracy = 100 * correct / len(data)
-#   print("Training accuracy:", accuracy.item())
+  print("Loss:", running_loss / batch["input_ids"].shape[0])
+  accuracy = 100 * correct / len(data)
+  print("Training accuracy:", accuracy.item())
 
-  # prepare image for the model
-image = Image.open("./content/test_file/rent.jpg")
-image = image.convert("RGB")
+
+# prepare image for the model
 encoded_inputs = processor(image, return_tensors="pt")
-
-print("converted text")
-print(print(processor.tokenizer.decode(encoded_inputs.input_ids.squeeze().tolist())))
 
 # make sure all keys of encoded_inputs are on the same device as the model
 for k,v in encoded_inputs.items():
@@ -163,7 +155,6 @@ outputs = model(**encoded_inputs)
 
 logits = outputs.logits
 print(logits.shape)
-
 
 predicted_class_idx = logits.argmax(-1).item()
 print("Predicted class:", id2label[predicted_class_idx])
